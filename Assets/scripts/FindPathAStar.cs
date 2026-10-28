@@ -49,8 +49,11 @@ public class FindPathAStar : MonoBehaviour
 
     private void Update()
     {
-        if (Keyboard.current != null && Keyboard.current.pKey.wasPressedThisFrame)
+        if (Keyboard.current == null) return;
+        if (Keyboard.current.pKey.wasPressedThisFrame)
             BeginSearch();
+        if (Keyboard.current.cKey.wasPressedThisFrame && !done && lastPos != null)
+            Search(lastPos);
     }
 
     private void RemoveAllMarkers()
@@ -97,12 +100,14 @@ public class FindPathAStar : MonoBehaviour
         lastPos = startNode;
     }
 
-    // Expande los cuatro vecinos de un nodo. 
+    // Cada pulsación de C expande un nodo y escoge el siguiente.
     private void Search(PathMarker current)
     {
+        if (current == null || goalNode == null) return;
         if (current.Equals(goalNode))
         {
             done = true;
+            Debug.Log("A*: se encontró la meta.");
             return;
         }
 
@@ -126,8 +131,10 @@ public class FindPathAStar : MonoBehaviour
                 if (g < existing.G)
                 {
                     existing.G = g;
+                    existing.H = h;
                     existing.F = f;
                     existing.parent = current.marker;
+                    SetCosts(existing.marker, g, h, f);
                 }
                 continue;
             }
@@ -137,8 +144,38 @@ public class FindPathAStar : MonoBehaviour
             pathBlock.tag = "marker";
             if (openMaterial != null && pathBlock.TryGetComponent<Renderer>(out var renderer))
                 renderer.material = openMaterial;
+            SetCosts(pathBlock, g, h, f);
             open.Add(new PathMarker(neighbour, g, h, f, pathBlock, current.marker));
         }
+
+        // El primer empate en F se resuelve con menor H: más cerca de la meta.
+        open.Sort((a, b) => {
+            int byF = a.F.CompareTo(b.F);
+            return byF != 0 ? byF : a.H.CompareTo(b.H);
+        });
+        if (open.Count == 0)
+        {
+            done = true;
+            Debug.LogWarning("A*: no hay una ruta a la meta.");
+            return;
+        }
+
+        PathMarker next = open[0];
+        open.RemoveAt(0);
+        closed.Add(next);
+        if (closedMaterial != null && next.marker != null &&
+            next.marker.TryGetComponent<Renderer>(out var nextRenderer))
+            nextRenderer.material = closedMaterial;
+        lastPos = next;
+    }
+
+    private static void SetCosts(GameObject pathBlock, float g, float h, float f)
+    {
+        TextMesh[] values = pathBlock.GetComponentsInChildren<TextMesh>(true);
+        if (values.Length < 3) return;
+        values[0].text = "G: " + g.ToString("0.0");
+        values[1].text = "H: " + h.ToString("0.0");
+        values[2].text = "F: " + f.ToString("0.0");
     }
 
     private bool IsClosed(MapLocation location)
