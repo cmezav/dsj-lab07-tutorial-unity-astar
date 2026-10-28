@@ -7,10 +7,10 @@ public class PathMarker
     public MapLocation location;
     public float G, H, F;
     public GameObject marker;
-    public GameObject parent;
+    public PathMarker parent;
 
     public PathMarker(MapLocation location, float g, float h, float f,
-        GameObject marker, GameObject parent)
+        GameObject marker, PathMarker parent)
     {
         this.location = location;
         G = g;
@@ -54,6 +54,8 @@ public class FindPathAStar : MonoBehaviour
             BeginSearch();
         if (Keyboard.current.cKey.wasPressedThisFrame && !done && lastPos != null)
             Search(lastPos);
+        if (Keyboard.current.mKey.wasPressedThisFrame)
+            GetPath();
     }
 
     private void RemoveAllMarkers()
@@ -133,7 +135,7 @@ public class FindPathAStar : MonoBehaviour
                     existing.G = g;
                     existing.H = h;
                     existing.F = f;
-                    existing.parent = current.marker;
+                    existing.parent = current;
                     SetCosts(existing.marker, g, h, f);
                 }
                 continue;
@@ -145,7 +147,7 @@ public class FindPathAStar : MonoBehaviour
             if (openMaterial != null && pathBlock.TryGetComponent<Renderer>(out var renderer))
                 renderer.material = openMaterial;
             SetCosts(pathBlock, g, h, f);
-            open.Add(new PathMarker(neighbour, g, h, f, pathBlock, current.marker));
+            open.Add(new PathMarker(neighbour, g, h, f, pathBlock, current));
         }
 
         // El primer empate en F se resuelve con menor H: más cerca de la meta.
@@ -167,6 +169,42 @@ public class FindPathAStar : MonoBehaviour
             next.marker.TryGetComponent<Renderer>(out var nextRenderer))
             nextRenderer.material = closedMaterial;
         lastPos = next;
+    }
+
+    // Sigue los padres desde la meta hasta el inicio y dibuja solo la ruta.
+    private void GetPath()
+    {
+        if (!done || lastPos == null || goalNode == null ||
+            !lastPos.Equals(goalNode) || startNode == null)
+        {
+            Debug.LogWarning("Primero pulsa P y luego C hasta encontrar la meta; después pulsa M.");
+            return;
+        }
+
+        var route = new List<MapLocation>();
+        PathMarker node = lastPos;
+        while (node != null)
+        {
+            route.Add(node.location);
+            if (node.Equals(startNode)) break;
+            node = node.parent;
+        }
+        if (node == null)
+        {
+            Debug.LogWarning("No se pudo reconstruir la ruta hasta el inicio.");
+            return;
+        }
+
+        RemoveAllMarkers();
+        foreach (MapLocation location in route)
+        {
+            Vector3 world = new Vector3(location.x * maze.scale, 0f, location.z * maze.scale);
+            GameObject block = Instantiate(pathP, world, Quaternion.identity);
+            block.tag = "marker";
+            if (openMaterial != null && block.TryGetComponent<Renderer>(out var renderer))
+                renderer.material = openMaterial;
+        }
+        Debug.Log("A*: ruta final de " + route.Count + " nodos.");
     }
 
     private static void SetCosts(GameObject pathBlock, float g, float h, float f)
