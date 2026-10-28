@@ -1,106 +1,157 @@
-using UnityEngine;
 using System.Collections.Generic;
-using System.Linq;
+using UnityEngine;
 using UnityEngine.InputSystem;
 
-public class PathMarker {
-
+public class PathMarker
+{
     public MapLocation location;
-
-    public float G;
-    public float H;
-    public float F;
-
+    public float G, H, F;
     public GameObject marker;
     public GameObject parent;
 
-    public PathMarker(MapLocation l, float g, float h, float f, GameObject marker, GameObject p) {
-
-        location = l;
+    public PathMarker(MapLocation location, float g, float h, float f,
+        GameObject marker, GameObject parent)
+    {
+        this.location = location;
         G = g;
         H = h;
         F = f;
         this.marker = marker;
-        parent = p;
+        this.parent = parent;
     }
 
-    public override bool Equals(object obj) {
-
-        if ((obj == null) || !this.GetType().Equals(obj.GetType()))
-            return false;
-        else
-            return location.Equals(((PathMarker)obj).location);
+    public override bool Equals(object obj)
+    {
+        return obj is PathMarker other && location.Equals(other.location);
     }
 
-    public override int GetHashCode() {
-
-        return 0;
+    public override int GetHashCode()
+    {
+        return location.x * 397 ^ location.z;
     }
 }
 
-public class FindPathAStar : MonoBehaviour {
-
+public class FindPathAStar : MonoBehaviour
+{
     public Maze maze;
     public Material closedMaterial;
     public Material openMaterial;
-
-    List<PathMarker> open = new List<PathMarker>();
-    List<PathMarker> closed = new List<PathMarker>();
-
     public GameObject start;
     public GameObject end;
     public GameObject pathP;
 
-    PathMarker goalNode;
-    PathMarker startNode;
-    PathMarker lastPos;
+    private readonly List<PathMarker> open = new List<PathMarker>();
+    private readonly List<PathMarker> closed = new List<PathMarker>();
+    private PathMarker goalNode;
+    private PathMarker startNode;
+    private PathMarker lastPos;
+    private bool done;
 
-    bool done = false;
-
-    void RemoveAllMarkers() {
-
-        GameObject[] markers = GameObject.FindGameObjectsWithTag("marker");
-
-        foreach (GameObject m in markers) {
-
-            Destroy(m);
-        }
+    private void Update()
+    {
+        if (Keyboard.current != null && Keyboard.current.pKey.wasPressedThisFrame)
+            BeginSearch();
     }
 
-    void BeginSearch() {
+    private void RemoveAllMarkers()
+    {
+        foreach (GameObject marker in GameObject.FindGameObjectsWithTag("marker"))
+            Destroy(marker);
+    }
+
+    private void BeginSearch()
+    {
+        if (maze == null || maze.map == null || start == null || end == null || pathP == null)
+        {
+            Debug.LogWarning("Asigna Maze, Start, End y Path P y ejecuta el laberinto antes de pulsar P.");
+            return;
+        }
 
         done = false;
         RemoveAllMarkers();
+        open.Clear();
+        closed.Clear();
 
-        List<MapLocation> locations = new List<MapLocation>();
-
-        for (int z = 1; z < maze.depth; ++z) {
-            for (int x = 1; x < maze.width; ++x) {
-
-                if (maze.map[x, z] != 1) {
-
+        var locations = new List<MapLocation>();
+        for (int z = 1; z < maze.depth - 1; z++)
+            for (int x = 1; x < maze.width - 1; x++)
+                if (maze.map[x, z] != 1)
                     locations.Add(new MapLocation(x, z));
-                }
-            }
-        }
 
+        if (locations.Count < 2)
+        {
+            Debug.LogWarning("El laberinto necesita al menos dos pasillos libres.");
+            return;
+        }
         locations.Shuffle();
 
-        Vector3 startLocation = new Vector3(locations[0].x * maze.scale, 0.0f, locations[0].z * maze.scale);
-        startNode = new PathMarker(new MapLocation(locations[0].x, locations[0].z), 0.0f, 0.0f, 0.0f,
-            Instantiate(start, startLocation, Quaternion.identity), null);
-
-        Vector3 goalLocation = new Vector3(locations[1].x * maze.scale, 0.0f, locations[1].z * maze.scale);
-        goalNode = new PathMarker(new MapLocation(locations[1].x, locations[1].z), 0.0f, 0.0f, 0.0f,
-            Instantiate(end, goalLocation, Quaternion.identity), null);
+        MapLocation startLocation = locations[0];
+        MapLocation goalLocation = locations[1];
+        Vector3 startWorld = new Vector3(startLocation.x * maze.scale, 0f, startLocation.z * maze.scale);
+        Vector3 goalWorld = new Vector3(goalLocation.x * maze.scale, 0f, goalLocation.z * maze.scale);
+        startNode = new PathMarker(startLocation, 0f, 0f, 0f,
+            Instantiate(start, startWorld, Quaternion.identity), null);
+        goalNode = new PathMarker(goalLocation, 0f, 0f, 0f,
+            Instantiate(end, goalWorld, Quaternion.identity), null);
+        open.Add(startNode);
+        lastPos = startNode;
     }
 
-    void Start() {
+    // Expande los cuatro vecinos de un nodo. 
+    private void Search(PathMarker current)
+    {
+        if (current.Equals(goalNode))
+        {
+            done = true;
+            return;
+        }
 
+        foreach (MapLocation direction in maze.directions)
+        {
+            MapLocation neighbour = current.location + direction;
+            // Primero límites; consultar maze.map antes podría lanzar IndexOutOfRangeException.
+            if (neighbour.x < 1 || neighbour.x >= maze.width - 1 ||
+                neighbour.z < 1 || neighbour.z >= maze.depth - 1)
+                continue;
+            if (maze.map[neighbour.x, neighbour.z] == 1 || IsClosed(neighbour))
+                continue;
+
+            float g = current.G + Vector2.Distance(current.location.ToVector(), neighbour.ToVector());
+            float h = Vector2.Distance(neighbour.ToVector(), goalNode.location.ToVector());
+            float f = g + h;
+
+            PathMarker existing = FindOpen(neighbour);
+            if (existing != null)
+            {
+                if (g < existing.G)
+                {
+                    existing.G = g;
+                    existing.F = f;
+                    existing.parent = current.marker;
+                }
+                continue;
+            }
+
+            Vector3 world = new Vector3(neighbour.x * maze.scale, 0f, neighbour.z * maze.scale);
+            GameObject pathBlock = Instantiate(pathP, world, Quaternion.identity);
+            pathBlock.tag = "marker";
+            if (openMaterial != null && pathBlock.TryGetComponent<Renderer>(out var renderer))
+                renderer.material = openMaterial;
+            open.Add(new PathMarker(neighbour, g, h, f, pathBlock, current.marker));
+        }
     }
 
-    void Update() {
+    private bool IsClosed(MapLocation location)
+    {
+        foreach (PathMarker marker in closed)
+            if (marker.location.Equals(location)) return true;
+        return false;
+    }
 
-        if(Keyboard.current.pKey.wasPressedThisFrame) BeginSearch();
+    private PathMarker FindOpen(MapLocation location)
+    {
+        foreach (PathMarker marker in open)
+            if (marker.location.Equals(location)) return marker;
+        return null;
     }
 }
