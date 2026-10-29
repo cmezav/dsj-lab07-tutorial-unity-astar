@@ -47,6 +47,36 @@ public class FindPathAStar : MonoBehaviour
     private PathMarker lastPos;
     private bool done;
 
+    private void Start()
+    {
+        FrameMazeCamera();
+    }
+
+    // La escena puede tener un laberinto de cualquier ancho, profundidad o escala.
+    private void FrameMazeCamera()
+    {
+        Camera cam = Camera.main;
+        if (maze == null || cam == null) return;
+
+        const float angle = 60f;
+        float radians = angle * Mathf.Deg2Rad;
+        float width = Mathf.Max(1, maze.width) * maze.scale;
+        float depth = Mathf.Max(1, maze.depth) * maze.scale;
+
+        cam.orthographic = true;
+        cam.transform.rotation = Quaternion.Euler(angle, 0f, 0f);
+        Vector3 center = new Vector3((maze.width - 1) * maze.scale * 0.5f,
+                                     maze.scale * 0.5f,
+                                     (maze.depth - 1) * maze.scale * 0.5f);
+        float halfHeight = 0.5f * (depth * Mathf.Sin(radians) +
+                                   maze.scale * Mathf.Cos(radians));
+        float halfWidth = 0.5f * width / Mathf.Max(0.1f, cam.aspect);
+        cam.orthographicSize = 1.2f * Mathf.Max(halfWidth, halfHeight);
+        cam.transform.position = center - cam.transform.forward *
+                                 (Mathf.Max(width, depth) * 1.5f + 10f);
+        cam.farClipPlane = Mathf.Max(cam.farClipPlane, Mathf.Max(width, depth) * 3f + 50f);
+    }
+
     private void Update()
     {
         if (Keyboard.current == null) return;
@@ -92,9 +122,10 @@ public class FindPathAStar : MonoBehaviour
 
         MapLocation startLocation = locations[0];
         MapLocation goalLocation = locations[1];
+        float h0 = Vector2.Distance(startLocation.ToVector(), goalLocation.ToVector());
         Vector3 startWorld = new Vector3(startLocation.x * maze.scale, 0f, startLocation.z * maze.scale);
         Vector3 goalWorld = new Vector3(goalLocation.x * maze.scale, 0f, goalLocation.z * maze.scale);
-        startNode = new PathMarker(startLocation, 0f, 0f, 0f,
+        startNode = new PathMarker(startLocation, 0f, h0, h0,
             Instantiate(start, startWorld, Quaternion.identity), null);
         goalNode = new PathMarker(goalLocation, 0f, 0f, 0f,
             Instantiate(end, goalWorld, Quaternion.identity), null);
